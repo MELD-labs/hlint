@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, NoMonomorphismRestriction #-}
+{-# LANGUAGE RecordWildCards, NoMonomorphismRestriction, TupleSections #-}
 
 module Idea(
     Idea(..),
@@ -18,6 +18,7 @@ import Prelude
 import GHC.Types.SrcLoc
 import GHC.Utils.Outputable
 import GHC.Util
+import Data.Tuple.Extra (both, second)
 
 import Language.Haskell.GhclibParserEx.GHC.Utils.Outputable
 
@@ -74,14 +75,28 @@ showIdeaANSI = showEx hsColourConsole
 showEx :: (String -> String) -> Idea -> String
 showEx tt Idea{..} = unlines $
     [showSrcSpan ideaSpan ++ ": " ++ (if ideaHint == "" then "" else show ideaSeverity ++ ": " ++ ideaHint)] ++
-    f "Found" (Just ideaFrom) ++ f "Perhaps" ideaTo ++
+    f "Found" (Just ideaFrom') ++ f "Perhaps" ideaTo' ++
     ["Note: " ++ n | let n = showNotes ideaNote, n /= ""]
     where
+        (ideaFrom', ideaTo') = maybe (ideaFrom, Nothing) ((second Just) . reduceJunk . (ideaFrom, )) ideaTo
         f msg Nothing = []
         f msg (Just x) | null xs = [msg ++ " you should remove it."]
                        | otherwise = (msg ++ ":") : map ("  "++) xs
             where xs = lines $ tt x
 
+reduceJunk :: (String, String) -> (String, String)
+reduceJunk x@(from, to) =
+    let 
+        commonPrefix :: ([String], [String]) -> Int 
+        commonPrefix ([], _) = 0
+        commonPrefix (_, []) = 0
+        commonPrefix (f : fs, t : ts) = if f == t then 1 + commonPrefix (fs, ts) else 0  
+        tup = both lines x
+        reverseTup = both reverse tup
+        (lcp, lcs) = (commonPrefix tup - 1, commonPrefix reverseTup - 1)
+        extract :: Int -> Int -> [a] -> [a]
+        extract l r = drop l . take r
+    in both (unlines . (\hints -> extract lcp (length hints - lcs) hints)) tup
 
 rawIdea :: Severity -> String -> SrcSpan -> String -> Maybe String -> [Note]-> [Refactoring R.SrcSpan] -> Idea
 rawIdea = Idea [] []
